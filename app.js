@@ -77,26 +77,41 @@ async function loadHandlers() {
 }
 loadHandlers();
 
-// === 掃碼功能 (使用 html5-qrcode) ===
-function startScanner(targetId, inputElement) {
+// === 掃碼功能 (使用 get-camera) ===
+async function startScanner(targetId, inputElement) {
   const scannerElem = document.getElementById(targetId);
   scannerElem.style.display = "block";
   const html5QrCode = new Html5Qrcode(targetId);
-  const config = { fps: 10, qrbox: { width: 250, height: 250 }, facingMode: { exact: "environment" } };
-  html5QrCode.start(
-    { facingMode: "environment" },
-    config,
-    (decodedText) => {
-      inputElement.value = decodedText;
-      if (document.getElementById("t-batch")?.checked) {
-        handleTransfer(); // 連續掃描模式自動交接
-      } else {
-        html5QrCode.stop();
-        scannerElem.style.display = "none";
-      }
+
+  try {
+    const devices = await Html5Qrcode.getCameras();
+    if (!devices || devices.length === 0) {
+      alert("找不到相機裝置");
+      return;
     }
-  ).catch(err => { console.error("Scanner 啟動失敗", err); });
+    // 嘗試找後鏡頭，若沒有就用第一個
+    let backCam = devices.find(d => /back|rear|environment/i.test(d.label));
+    let cameraId = backCam ? backCam.id : devices[0].id;
+
+    await html5QrCode.start(
+      cameraId,
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      (decodedText) => {
+        inputElement.value = decodedText;
+        if (document.getElementById("t-batch")?.checked) {
+          handleTransfer(); // 連續掃描模式
+        } else {
+          html5QrCode.stop();
+          scannerElem.style.display = "none";
+        }
+      }
+    );
+  } catch (err) {
+    console.error("Scanner 啟動失敗", err);
+    alert("無法啟動相機：" + err);
+  }
 }
+
 
 // Transfer tab
 document.getElementById("btn-open-scanner").addEventListener("click", () => {
