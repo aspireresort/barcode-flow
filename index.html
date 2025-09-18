@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>文件條碼流轉系統 (Smart Scanner v4.7)</title>
+  <title>文件條碼流轉系統 (Smart Scanner v4.8)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="container">
     <header>
       <h1>📄 文件條碼流轉系統</h1>
-      <p class="muted">v4.7：登入修復（Redirect + Persistence）＆ 掃描更穩（兩階段解碼 10FPS）</p>
+      <p class="muted">v4.8：優先用原生 <code>BarcodeDetector</code> → 其次 <code>Quagga2</code> → 最後 ZXing；強制 1080p、ROI 放大、完整 Debug</p>
     </header>
 
     <div id="auth-bar" class="card authbar">
@@ -29,6 +29,9 @@
 
     <section id="transfer" class="tab-pane active">
       <h2>新增 / 交接</h2>
+      <div class="row small">
+        <label><input type="checkbox" id="opt-zoom" checked /> 啟用 ROI 放大（提升解碼率）</label>
+      </div>
       <div class="row">
         <label>條碼號碼</label>
         <div class="barcode-row">
@@ -144,14 +147,15 @@
       </div>
     </section>
 
-    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner v4.7</small></footer>
+    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner v4.8</small></footer>
   </div>
 
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-  <!-- ZXing UMD -->
+  <!-- Engines: Quagga2 & ZXing (fallback) -->
+  <script src="https://unpkg.com/quagga2@1.8.2/dist/quagga.min.js"></script>
   <script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
   <!-- App -->
   <script src="app.js"></script>

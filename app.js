@@ -1,4 +1,4 @@
-// app.js — Smart Scanner v4.7
+// app.js — Smart Scanner v4.8
 
 // Firebase 初始化
 const firebaseConfig = {
@@ -22,19 +22,11 @@ const ddhhmmss=(sec)=>{ sec=Math.max(0,Math.floor(sec||0)); const d=Math.floor(s
 function isIOSSafari(){ return /iP(hone|ad|od)/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent); }
 function log(msg){ const b=$("debug-log"); if(!b) return; const d=document.createElement("div"); d.textContent=msg; b.appendChild(d); }
 
-// —— Auth 強化 ——
+// —— Auth（沿用 v4.7） ——
 (async ()=>{
-  try{
-    await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
-    log("Auth persistence: LOCAL");
-  }catch(e){ log("setPersistence error: "+e.message); }
-  // getRedirectResult：處理 iOS 返回
-  try{
-    const res = await auth.getRedirectResult();
-    if(res && res.user){ log("Redirect 回來，已登入："+res.user.email); }
-  }catch(e){ log("getRedirectResult error: "+e.code+" / "+e.message); }
+  try{ await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); log("Auth persistence: LOCAL"); }catch(e){ log("setPersistence error: "+e.message); }
+  try{ const res = await auth.getRedirectResult(); if(res && res.user){ log("Redirect 回來，已登入："+res.user.email); } }catch(e){ log("getRedirectResult error: "+e.code+" / "+e.message); }
 })();
-
 auth.onAuthStateChanged(async (u)=>{
   $("auth-status").textContent = u ? `已登入：${u.email}` : "尚未登入（未登入時可測試掃描，但無法寫入）";
   $("btn-signin").style.display = u ? "none" : "inline-block";
@@ -42,26 +34,12 @@ auth.onAuthStateChanged(async (u)=>{
   if(u){ await loadHandlers(); await refreshHandlerList(); }
 });
 $("btn-signin").addEventListener("click", async ()=>{
-  try{
-    if(isIOSSafari()){ log("Start Redirect Sign-in"); await auth.signInWithRedirect(provider); }
-    else{ log("Start Popup Sign-in"); await auth.signInWithPopup(provider); }
-  }catch(e){
-    log("Auth error: "+e.code+" / "+e.message);
-    alert("登入失敗："+e.message+"。請確認 Firebase Auth 已啟用 Google，且把 GitHub Pages 網域加入 Authorized domains。");
-  }
+  try{ if(isIOSSafari()) await auth.signInWithRedirect(provider); else await auth.signInWithPopup(provider); }
+  catch(e){ log("Auth error: "+e.code+" / "+e.message); alert("登入失敗："+e.message); }
 });
 $("btn-signout").addEventListener("click", ()=>auth.signOut());
 
-// 分頁
-document.querySelectorAll(".tab").forEach(btn=>{
-  btn.addEventListener("click", ()=>{
-    document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
-    document.querySelectorAll(".tab-pane").forEach(p=>p.classList.remove("active"));
-    btn.classList.add("active"); document.getElementById(btn.dataset.tab).classList.add("active");
-  });
-});
-
-// Firestore helpers
+// Firestore helpers（同前）
 async function getLastFlow(barcode){
   const snap = await db.collection("flows").where("barcode_id","==",barcode).orderBy("entry_time","desc").limit(1).get();
   if(snap.empty) return null; const doc = snap.docs[0]; return { id: doc.id, ...doc.data() };
@@ -114,126 +92,211 @@ async function buildReport(start,end){
   return { rows, newCount, transferCount, avgStayStr: n?ddhhmmss(totalStay/n):"—" };
 }
 
-// —— 掃描（兩階段 10FPS） ——
-let zxingReader=null; let currentStream=null; let torchOn=false; let pollingTimer=null; let phase="code128"; let missCount=0;
-function stopVideo(videoEl){ try{ const s=videoEl.srcObject; if(s){ s.getTracks().forEach(t=>t.stop()); } }catch(e){} videoEl.srcObject=null; currentStream=null; }
-function stopPolling(){ if(pollingTimer){ clearInterval(pollingTimer); pollingTimer=null; } }
-function buildZXingReader(mode){
-  const ZX = window.ZXing;
-  if(!ZX || !ZX.BrowserMultiFormatReader){ alert("ZXing 載入失敗，請重新整理頁面或檢查網路"); return null; }
-  let hints = undefined;
-  try{
-    const H = ZX.DecodeHintType;
-    const BF = ZX.BarcodeFormat;
-    hints = new Map();
-    hints.set(H.TRY_HARDER, true);
-    if(mode==="code128"){ hints.set(H.POSSIBLE_FORMATS, [BF.CODE_128]); }
-    else { hints.set(H.POSSIBLE_FORMATS, [BF.CODE_128,BF.CODE_39,BF.EAN_13,BF.EAN_8,BF.QR_CODE,BF.UPC_A,BF.UPC_E,BF.ITF,BF.CODABAR]); }
-  }catch(e){ /* 有些環境沒有 HintType 也能跑 */ }
-  return new ZX.BrowserMultiFormatReader(hints);
-}
+// —— 掃描引擎：BarcodeDetector → Quagga2（fallback）→ ZXing（最後保底） ——
+let currentStream=null; let torchOn=false; let intervalId=null; let usingEngine=""; let bd=null;
+function clearIntervalSafe(){ if(intervalId){ clearInterval(intervalId); intervalId=null; } }
+function logEngine(){ log("使用引擎："+usingEngine); }
 async function startStream(videoEl){
-  const constraints = { audio:false, video:{ facingMode:{ideal:"environment"}, width:{ideal:1280}, height:{ideal:720} } };
+  const constraints = {
+    audio:false,
+    video:{
+      facingMode:{ ideal:"environment" },
+      width:{ ideal:1920, min:1280 },
+      height:{ ideal:1080, min:720 }
+    }
+  };
   const stream = await navigator.mediaDevices.getUserMedia(constraints);
   videoEl.srcObject = stream;
   await new Promise(r=> videoEl.onloadedmetadata = ()=>{ videoEl.play(); r(); });
   currentStream = stream;
+  log(`Video ready: ${videoEl.videoWidth}x${videoEl.videoHeight}`);
   return stream;
 }
-function startPolling(videoEl, onText){
-  const ZX = window.ZXing;
-  let reader = buildZXingReader("code128");
-  phase="code128"; missCount=0;
+function stopVideo(videoEl){ try{ const s=videoEl.srcObject; if(s){ s.getTracks().forEach(t=>t.stop()); } }catch(e){} videoEl.srcObject=null; currentStream=null; clearIntervalSafe(); if(window.Quagga){ try{ Quagga.stop(); }catch{} } }
+
+function roiCanvas(videoEl){
+  const zoom = $("opt-zoom").checked;
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
-  stopPolling();
-  pollingTimer = setInterval(async ()=>{
-    try{
-      const w = videoEl.videoWidth || 1280;
-      const h = videoEl.videoHeight || 720;
-      if(w===0||h===0) return;
-      canvas.width = w; canvas.height = h;
-      ctx.drawImage(videoEl,0,0,w,h);
-      const res = await reader.decodeFromCanvas(canvas);
-      if(res && res.getText){
-        log("ZXing 解碼："+res.getText());
-        onText(res.getText());
-      }
-    }catch(e){
-      // 連續 miss，切換到多制式
-      missCount++;
-      if(phase==="code128" && missCount>20){
-        log("切換為多制式解碼（可能不是 Code128）");
-        reader = buildZXingReader("mixed"); phase="mixed"; missCount=0;
-      }
-    }
-  }, 100); // 10 FPS
+  const w = videoEl.videoWidth || 1280, h = videoEl.videoHeight || 720;
+  if(zoom){
+    // 取中間 60% 高度、100% 寬度，並放大到 2x（提升 Code128 成功率）
+    const roiH = Math.floor(h*0.6), y = Math.floor((h-roiH)/2);
+    canvas.width = w*2; canvas.height = roiH*2;
+    ctx.drawImage(videoEl, 0, y, w, roiH, 0, 0, canvas.width, canvas.height);
+  }else{
+    canvas.width = w; canvas.height = h;
+    ctx.drawImage(videoEl, 0, 0, w, h);
+  }
+  return canvas;
 }
 
-function showDecodedPreview(txt){ const box=$("scan-preview"); if(box) box.innerHTML = `<div>最近一次解碼：<strong>${txt}</strong></div>`; }
-async function toggleTorch(){
+// A) Native BarcodeDetector
+async function tryBarcodeDetector(videoEl, onText){
+  if(!("BarcodeDetector" in window)){ return false; }
+  const formats = await window.BarcodeDetector.getSupportedFormats();
+  if(!formats.includes("code_128") && !formats.includes("codabar") && !formats.includes("code_39")){ return false; }
+  bd = new window.BarcodeDetector({ formats: formats.includes("code_128") ? ["code_128"] : formats });
+  usingEngine = "BarcodeDetector"; logEngine();
+  clearIntervalSafe();
+  intervalId = setInterval(async ()=>{
+    try{
+      const canvas = roiCanvas(videoEl);
+      const bitmap = await createImageBitmap(canvas);
+      const codes = await bd.detect(bitmap);
+      if(codes && codes.length){
+        const txt = codes[0].rawValue || codes[0].rawValueText || "";
+        if(txt){ onText(txt); }
+      }
+    }catch(e){ /* ignore per tick */ }
+  }, 120);
+  return true;
+}
+
+// B) Quagga2 Fallback
+async function tryQuaggaLive(videoEl, onText){
+  if(!window.Quagga) return false;
+  usingEngine = "Quagga2"; logEngine();
+  clearIntervalSafe();
+  // Quagga 會自己建立 video，這裡用 target 容器包裹現有 <video> 的父層
+  const target = videoEl.parentElement; // .video-wrap
+  return new Promise((resolve)=>{
+    Quagga.init({
+      inputStream:{
+        name:"Live",
+        type:"LiveStream",
+        target: target,
+        constraints:{ facingMode:"environment", width:{ideal:1920}, height:{ideal:1080} }
+      },
+      locator:{ patchSize:"large", halfSample:true },
+      decoder:{ readers:["code_128_reader","code_39_reader","ean_reader","ean_8_reader","upc_reader","upc_e_reader","i2of5_reader"] },
+      locate:true,
+      frequency: 10
+    }, (err)=>{
+      if(err){ log("Quagga init error: "+err); resolve(false); return; }
+      Quagga.start();
+      Quagga.onDetected((data)=>{
+        const code = data?.codeResult?.code;
+        if(code){ onText(code); }
+      });
+      resolve(true);
+    });
+  });
+}
+
+// C) ZXing Last Resort（decode snapshot every tick）
+async function tryZXingPolling(videoEl, onText){
+  const ZX = window.ZXing;
+  if(!ZX || !ZX.BrowserMultiFormatReader) return false;
+  usingEngine = "ZXing"; logEngine();
+  const reader = new ZX.BrowserMultiFormatReader();
+  clearIntervalSafe();
+  intervalId = setInterval(async ()=>{
+    try{
+      const canvas = roiCanvas(videoEl);
+      const res = await reader.decodeFromCanvas(canvas);
+      if(res?.getText){ onText(res.getText()); }
+    }catch(e){}
+  }, 150);
+  return true;
+}
+
+// UI 綁定 — 開啟掃描
+$("btn-open-scanner").addEventListener("click", async ()=>{
+  const keepOpen = $("t-batch").checked;
+  const onText=(txt)=>{ $("t-barcode").value = txt; $("scan-preview").innerHTML = `最近一次解碼：<b>${txt}</b>`; if(!keepOpen){ stopVideo($("video")); } };
+  try{
+    await startStream($("video"));
+    $("scan-help").textContent = "把條碼橫向置中，距離 15–25cm；必要時開啟手電筒。";
+    // Engine chain
+    const okBD = await tryBarcodeDetector($("video"), onText);
+    if(!okBD){
+      const okQ = await tryQuaggaLive($("video"), onText);
+      if(!okQ){ await tryZXingPolling($("video"), onText); }
+    }
+  }catch(e){ $("scan-help").textContent = "相機開啟失敗"; log("open-scanner error: "+e); }
+});
+$("btn-stop-scanner").addEventListener("click", ()=> stopVideo($("video")));
+
+$("btn-snapshot").addEventListener("click", async ()=>{
+  const canvas = roiCanvas($("video"));
+  // Try detector first
+  try{
+    if(bd){ const bitmap = await createImageBitmap(canvas); const res = await bd.detect(bitmap); if(res && res[0]){ const txt=res[0].rawValue||""; if(txt){ $("t-barcode").value=txt; $("scan-preview").innerHTML=`最近一次解碼：<b>${txt}</b>`; return; } } }
+  }catch(e){}
+  // Fallback to Quagga2 one-shot
+  if(window.Quagga){
+    try{
+      Quagga.decodeSingle({
+        src: canvas.toDataURL("image/png"),
+        numOfWorkers: 0,
+        locator:{ patchSize:"large", halfSample:false },
+        decoder:{ readers:["code_128_reader","code_39_reader","ean_reader","ean_8_reader"] },
+        locate:true
+      }, (data)=>{
+        const code = data?.codeResult?.code;
+        if(code){ $("t-barcode").value=code; $("scan-preview").innerHTML=`最近一次解碼：<b>${code}</b>`; }
+        else{ alert("此張影像無法解碼，請再靠近、補光或換角度。"); }
+      });
+      return;
+    }catch(e){ log("Quagga decodeSingle error: "+e); }
+  }
+  // Last try ZXing
+  try{
+    const ZX = window.ZXing; if(ZX && ZX.BrowserMultiFormatReader){
+      const r = new ZX.BrowserMultiFormatReader(); const res = await r.decodeFromCanvas(canvas);
+      if(res?.getText){ $("t-barcode").value=res.getText(); $("scan-preview").innerHTML=`最近一次解碼：<b>${res.getText()}</b>`; return; }
+    }
+  }catch(e){ log("ZXing snapshot error: "+e); }
+});
+
+$("btn-torch").addEventListener("click", async ()=>{
   if(!currentStream){ alert("請先開啟相機"); return; }
   const track = currentStream.getVideoTracks()[0];
   const caps = track.getCapabilities ? track.getCapabilities() : {};
   if(!caps.torch){ alert("裝置不支援手電筒或瀏覽器未開放"); return; }
-  try{
-    const newVal = !(track.getSettings()?.torch);
-    await track.applyConstraints({ advanced:[ { torch: newVal } ] });
-  }catch(e){ alert("無法切換手電筒：" + e.message); }
-}
-
-// 綁定
-$("btn-open-scanner").addEventListener("click", async ()=>{
-  const keepOpen = $("t-batch").checked;
-  const onText=(txt)=>{ $("t-barcode").value = txt; showDecodedPreview(txt); if(!keepOpen){ stopPolling(); stopVideo($("video")); } };
-  try{
-    await startStream($("video"));
-    $("scan-help").textContent = "請把 Code128 水平放置，距離 15–25cm，必要時開啟手電筒。";
-    startPolling($("video"), onText);
-  }catch(e){
-    $("scan-help").textContent = "相機開啟失敗，請改用『照片上傳掃碼』。"; log("open-scanner error: "+e);
-  }
+  const cur = track.getSettings()?.torch;
+  try{ await track.applyConstraints({ advanced:[{ torch: !cur }] }); }catch(e){ alert("無法切換手電筒："+e.message); }
 });
-$("btn-stop-scanner").addEventListener("click", ()=>{ stopPolling(); stopVideo($("video")); });
-$("btn-snapshot").addEventListener("click", async ()=>{
-  const ZX = window.ZXing;
-  const videoEl = $("video");
-  const canvas = document.createElement("canvas");
-  canvas.width = videoEl.videoWidth || 1280;
-  canvas.height = videoEl.videoHeight || 720;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-  try{
-    let reader = buildZXingReader("code128");
-    let res = await reader.decodeFromCanvas(canvas);
-    if(!res || !res.getText){ reader = buildZXingReader("mixed"); res = await reader.decodeFromCanvas(canvas); }
-    $("t-barcode").value = res.getText(); showDecodedPreview(res.getText());
-    log("手動擷取解碼："+res.getText());
-  }catch(e){
-    alert("此張影像無法解碼，請再靠近、對焦、補光或換角度後重試。");
-    log("snapshot decode fail: "+e);
-  }
-});
-$("btn-torch").addEventListener("click", toggleTorch);
 
+// 照片上傳掃碼（Quagga2 → ZXing）
 $("btn-file-scan").addEventListener("click", ()=> $("file-scan").click());
 $("file-scan").addEventListener("change", async (e)=>{
   const file = e.target.files?.[0]; if(!file) return;
-  const url = URL.createObjectURL(file); const img = new Image();
-  img.onload = async ()=>{
-    try{ 
-      let reader = buildZXingReader("code128"); 
-      let result = await reader.decodeFromImageElement(img);
-      if(!result || !result.getText){ reader = buildZXingReader("mixed"); result = await reader.decodeFromImageElement(img); }
-      $("t-barcode").value = result.getText(); showDecodedPreview(result.getText()); 
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = ()=>{
+    if(window.Quagga){
+      try{
+        Quagga.decodeSingle({
+          src: url, numOfWorkers: 0,
+          locator:{ patchSize:"large", halfSample:false },
+          decoder:{ readers:["code_128_reader","code_39_reader","ean_reader","ean_8_reader","upc_reader","upc_e_reader","i2of5_reader"] },
+          locate:true
+        }, (data)=>{
+          const code = data?.codeResult?.code;
+          if(code){ $("t-barcode").value=code; $("scan-preview").innerHTML=`最近一次解碼：<b>${code}</b>`; }
+          else{ alert("無法從照片辨識條碼，請換更清晰的照片或靠近一點。"); }
+          URL.revokeObjectURL(url); e.target.value="";
+        });
+        return;
+      }catch(err){ log("Quagga photo error: "+err); }
     }
-    catch{ alert("無法從照片辨識條碼，請換更清晰的照片"); }
-    finally{ URL.revokeObjectURL(url); e.target.value=""; }
+    // fallback ZXing
+    try{
+      const ZX = window.ZXing; if(ZX && ZX.BrowserMultiFormatReader){
+        const r = new ZX.BrowserMultiFormatReader();
+        r.decodeFromImageUrl(url).then(res=>{
+          $("t-barcode").value=res.getText(); $("scan-preview").innerHTML=`最近一次解碼：<b>${res.getText()}</b>`;
+          URL.revokeObjectURL(url); e.target.value="";
+        }).catch(_=>{ alert("照片也無法解碼，請改變距離或角度再試。"); URL.revokeObjectURL(url); e.target.value=""; });
+      }
+    }catch(e){ URL.revokeObjectURL(url); e.target.value=""; }
   };
   img.src = url;
 });
 
-// Handlers & 其他功能
+// Handlers & 其餘 UI（與 v4.7 相同）
 async function loadHandlers(){
   const sel = $("t-handler"); if(!sel) return; sel.innerHTML="";
   const snap = await db.collection("handlers").orderBy("name","asc").get();
@@ -259,7 +322,6 @@ $("btn-h-add")?.addEventListener("click", async ()=>{
   await db.collection("handlers").add({ name }); $("h-name").value=""; await loadHandlers(); await refreshHandlerList();
 });
 
-// 交接 / 查詢 / 報表
 $("btn-transfer").addEventListener("click", async ()=>{
   const barcode=$("t-barcode").value.trim(); const handler=$("t-handler").value; const title=$("t-title").value.trim();
   if(!barcode){ alert("請輸入條碼號碼"); return; }
@@ -271,14 +333,14 @@ $("btn-transfer").addEventListener("click", async ()=>{
 });
 
 $("btn-open-scanner-q").addEventListener("click", async ()=>{
+  const onText=(txt)=>{ $("q-barcode").value = txt; $("scan-preview").innerHTML=`最近一次解碼：<b>${txt}</b>`; stopVideo($("video-q")); };
   try{
     await startStream($("video-q"));
-    startPolling($("video-q"), (txt)=>{ $("q-barcode").value = txt; showDecodedPreview(txt); stopPolling(); stopVideo($("video-q")); });
-  }catch(e){
-    $("range-results").innerHTML = `<div class="card error">查詢用相機啟動失敗，請直接輸入條碼。</div>`;
-  }
+    const okBD = await tryBarcodeDetector($("video-q"), onText);
+    if(!okBD){ const okQ = await tryQuaggaLive($("video-q"), onText); if(!okQ){ await tryZXingPolling($("video-q"), onText); } }
+  }catch(e){ log("query scanner error: "+e); }
 });
-$("btn-stop-scanner-q").addEventListener("click", ()=>{ stopPolling(); stopVideo($("video-q")); });
+$("btn-stop-scanner-q").addEventListener("click", ()=> stopVideo($("video-q")));
 
 $("btn-query").addEventListener("click", async ()=>{
   const barcode=$("q-barcode").value.trim(); if(!barcode){ alert("請輸入條碼號碼"); return; }
