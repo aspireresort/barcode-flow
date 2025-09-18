@@ -9,65 +9,25 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://unpkg.com/html5-qrcode@2.3.10/html5-qrcode.min.js"></script>
-  <script src="https://unpkg.com/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
 </head>
 <body>
   <div class="container">
-    <header><h1>📄 文件條碼流轉系統</h1></header>
-    <div id="auth-bar" class="card authbar">
+    <header><h1>📄 文件條碼流轉系統（iPhone 相機修正版）</h1></header>
+    <div id="auth-bar" class="card">
       <span id="auth-status">尚未登入</span>
-      <div class="spacer"></div>
-      <button id="btn-signin">使用 Google 登入</button>
+      <button id="btn-signin">登入</button>
       <button id="btn-signout" style="display:none;">登出</button>
     </div>
-    <nav class="tabs">
-      <button class="tab active" data-tab="transfer">新增 / 交接</button>
-      <button class="tab" data-tab="query">查詢 / 歷史</button>
-      <button class="tab" data-tab="reports">報表</button>
-      <button class="tab" data-tab="setup">設定</button>
-    </nav>
-    <section id="transfer" class="tab-pane active">
-      <h2>新增 / 交接</h2>
+    <div class="card">
+      <label>條碼</label>
+      <input id="code" placeholder="點下方按鈕開相機掃描，也可手動輸入" />
       <div class="row">
-        <input id="t-barcode" placeholder="掃碼或輸入條碼號碼" />
-        <button id="btn-open-scanner">📷 開啟相機掃碼</button>
+        <button id="btn-scan">📷 開啟相機掃碼</button>
+        <button id="btn-stop" class="secondary" style="display:none;">停止相機</button>
       </div>
       <div id="scanner" class="scanner" style="display:none;"></div>
-      <div class="row">
-        <input id="t-title" placeholder="文件標題（第一筆必填）" />
-        <input id="t-ocr-file" type="file" accept="image/*" capture="environment" />
-        <button id="btn-ocr">🧠 OCR 辨識</button>
-        <div id="t-ocr-status" class="muted tiny"></div>
-      </div>
-      <div class="row">
-        <select id="t-handler"></select>
-      </div>
-      <div class="row"><button id="btn-transfer">➕ 新增 / 交接</button></div>
-      <div id="t-result" class="result"></div>
-    </section>
-    <section id="query" class="tab-pane">
-      <h2>查詢 / 歷史</h2>
-      <input id="q-barcode" placeholder="掃碼或輸入條碼號碼" />
-      <button id="btn-open-scanner-q">📷 掃碼</button>
-      <div id="scanner-q" class="scanner" style="display:none;"></div>
-      <button id="btn-query">查詢</button>
-      <div id="q-current" class="card"></div>
-      <table class="table" id="history-table"><thead><tr><th>條碼</th><th>標題</th><th>經手人</th><th>進入時間</th><th>離開時間</th><th>停留時長</th><th>狀態</th></tr></thead><tbody></tbody></table>
-    </section>
-    <section id="reports" class="tab-pane">
-      <h2>報表</h2>
-      <input type="datetime-local" id="r-start" />
-      <input type="datetime-local" id="r-end" />
-      <button id="btn-report">產生報表</button>
-      <div id="report-cards"></div>
-      <div id="report-list"></div>
-    </section>
-    <section id="setup" class="tab-pane">
-      <h2>設定</h2>
-      <input id="h-name" placeholder="輸入姓名" />
-      <button id="btn-h-add">新增經手人</button>
-      <div id="h-list"></div>
-    </section>
+      <div id="tip" class="muted tiny"></div>
+    </div>
   </div>
   <script src="app.js"></script>
 </body>
