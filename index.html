@@ -3,20 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>文件條碼流轉系統 (Smart Scanner v4)</title>
+  <title>文件條碼流轉系統 (Smart Scanner v4.1)</title>
   <link rel="stylesheet" href="style.css" />
-  <!-- Firebase (Compat) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-  <!-- ZXing -->
   <script src="https://unpkg.com/@zxing/browser@latest"></script>
 </head>
 <body>
   <div class="container">
     <header>
       <h1>📄 文件條碼流轉系統</h1>
-      <p class="muted">v4：iOS Safari 修正（Redirect 登入）、強化掃描 fallback、ZXing 強制模式</p>
+      <p class="muted">v4.1：修正按鈕不可點、加強掃描帶入與除錯訊息</p>
     </header>
 
     <div id="auth-bar" class="card authbar">
@@ -33,7 +31,6 @@
       <button class="tab" data-tab="setup">設定</button>
     </nav>
 
-    <!-- Transfer -->
     <section id="transfer" class="tab-pane active">
       <div class="row small">
         <label><input type="checkbox" id="force-zxing" /> 強制使用 ZXing（若 iOS 無法辨識可勾選）</label>
@@ -53,6 +50,7 @@
           <video id="video" autoplay playsinline muted></video>
           <canvas id="overlay"></canvas>
         </div>
+        <div id="scan-preview" class="card tiny muted"></div>
       </div>
 
       <div class="row">
@@ -76,10 +74,8 @@
       <div id="t-result" class="result"></div>
     </section>
 
-    <!-- Query -->
     <section id="query" class="tab-pane">
       <h2>查詢 / 歷史</h2>
-
       <details class="card">
         <summary>🔎 依條碼查詢（保留掃描）</summary>
         <div class="row">
@@ -119,7 +115,6 @@
       </details>
     </section>
 
-    <!-- Reports -->
     <section id="reports" class="tab-pane">
       <h2>報表</h2>
       <div class="row grid2">
@@ -136,7 +131,6 @@
       <div id="report-list"></div>
     </section>
 
-    <!-- Setup -->
     <section id="setup" class="tab-pane">
       <h2>設定</h2>
       <ol>
@@ -153,7 +147,7 @@
       </div>
     </section>
 
-    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner v4</small></footer>
+    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner v4.1</small></footer>
   </div>
   <script src="app.js"></script>
 </body>

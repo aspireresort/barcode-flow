@@ -1,5 +1,4 @@
-// app.js — Smart Scanner v4
-// Firebase config
+// app.js — Smart Scanner v4.1
 const firebaseConfig = {
   apiKey: "AIzaSyBUmWFAfcwLdhRBJ4GFkfqe_m7DOgrE808",
   authDomain: "ar-fo-2501.firebaseapp.com",
@@ -18,51 +17,41 @@ const pad2=(n)=>String(Math.floor(n)).padStart(2,"0");
 const fmt=(ts)=>{ if(!ts) return ""; const d = ts.toDate ? ts.toDate() : (ts instanceof Date ? ts : new Date(ts)); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; };
 const ddhhmmss=(sec)=>{ sec=Math.max(0,Math.floor(sec||0)); const d=Math.floor(sec/86400),h=Math.floor((sec%86400)/3600),m=Math.floor((sec%3600)/60),s=sec%60; return `${pad2(d)}:${pad2(h)}:${pad2(m)}:${pad2(s)}`; };
 
-// Detect iOS Safari (rough)
-function isIOSSafari(){
-  return /iP(hone|ad|od)/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
-}
+function isIOSSafari(){ return /iP(hone|ad|od)/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent); }
 
-// Auth — keep scanner buttons enabled even if not logged in
-function setAppEnabled(enabled){
-  document.querySelectorAll("button,input,select,textarea").forEach(el=>{
-    // 不禁用掃描按鈕與條碼輸入框，避免 Safari popup 被擋時完全卡住
-    if (['btn-open-scanner','btn-open-scanner-q','btn-file-scan','file-scan','t-barcode','q-barcode','force-zxing'].includes(el.id)) return;
-    if (el.id==='btn-signin' || el.id==='btn-signout') return;
-    el.disabled = !enabled;
-  });
-}
-setAppEnabled(false);
+// Always keep UI clickable; gate writes with auth check
+function requireLogin(){ if(!auth.currentUser){ alert("請先登入 Google 才能寫入資料"); return false; } return true; }
 
-// iOS Safari: 使用 Redirect 登入，避免 Popup 被擋
 auth.onAuthStateChanged(async (u)=>{
   $("auth-status").textContent = u ? `已登入：${u.email}` : "尚未登入";
   $("btn-signin").style.display = u ? "none" : "inline-block";
   $("btn-signout").style.display = u ? "inline-block" : "none";
-  setAppEnabled(!!u);
   if(u){ await loadHandlers(); await refreshHandlerList(); }
 });
 
 $("btn-signin").addEventListener("click", async ()=>{
-  try{
-    if(isIOSSafari()){
-      await auth.signInWithRedirect(provider);
-    }else{
-      await auth.signInWithPopup(provider);
-    }
-  }catch(e){
-    alert("登入失敗：" + e.message + (isIOSSafari() ? "\\n（iOS Safari 建議改用 Redirect，自動切換中）" : ""));
-  }
+  try{ if(isIOSSafari()) await auth.signInWithRedirect(provider); else await auth.signInWithPopup(provider); }
+  catch(e){ alert("登入失敗：" + e.message); }
 });
-$("btn-signout").addEventListener("click", ()=> auth.signOut());
+$("btn-signout").addEventListener("click", ()=>auth.signOut());
 
-// Firestore helpers
+// Tabs
+document.querySelectorAll(".tab").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
+    document.querySelectorAll(".tab-pane").forEach(p=>p.classList.remove("active"));
+    btn.classList.add("active"); document.getElementById(btn.dataset.tab).classList.add("active");
+  });
+});
+
+// Firestore helpers (same as v4)
 async function getLastFlow(barcode){
   const snap = await db.collection("flows").where("barcode_id","==",barcode).orderBy("entry_time","desc").limit(1).get();
   if(snap.empty) return null; const doc = snap.docs[0]; return { id: doc.id, ...doc.data() };
 }
 async function anyFlowExists(barcode){ const s = await db.collection("flows").where("barcode_id","==",barcode).limit(1).get(); return !s.empty; }
 async function createTransfer({barcode, handler, titleInput}){
+  if(!requireLogin()) return;
   const now = new Date(); const last = await getLastFlow(barcode); let title = titleInput;
   if(last){
     title = last.title || titleInput;
@@ -147,7 +136,7 @@ function renderReportList(container, rows){
     <div>停留：${r.stay_duration_str||"-"}</div></div>`).join("");
 }
 
-// Scanner logic
+// Scanner
 let zxingReader=null; let detectorTimer=null;
 function stopVideo(videoEl){ try{ const s=videoEl.srcObject; if(s){ s.getTracks().forEach(t=>t.stop()); } }catch(e){} videoEl.srcObject=null; }
 async function preflightPermission(){ try{ const s=await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ideal:"environment"} }, audio:false }); s.getTracks().forEach(t=>t.stop()); return true; }catch(e){ return false; } }
@@ -157,7 +146,12 @@ async function startBarcodeDetector(videoEl, onText){
   const detector = new window.BarcodeDetector({ formats: ['qr_code','code_128','ean_13','ean_8','code_39','upc_a','upc_e'] });
   const loop = async ()=>{
     if(!videoEl.srcObject) return;
-    try{ const res = await detector.detect(videoEl); if(res && res[0] && res[0].rawValue){ onText(res[0].rawValue); return; } }catch(e){}
+    try{ const res = await detector.detect(videoEl);
+      if(res && res[0] && res[0].rawValue){
+        console.log("BarcodeDetector decoded:", res[0].rawValue);
+        onText(res[0].rawValue); return;
+      }
+    }catch(e){}
     requestAnimationFrame(loop);
   };
   loop();
@@ -169,9 +163,18 @@ async function startZXing(videoElId, onText){
   if(!devices.length) throw new Error("no-cam");
   const back = devices.find(d=>/back|rear|environment/i.test(d.label));
   const camId = (back||devices[0]).deviceId;
+  console.log("ZXing using camera:", camId);
   await zxingReader.decodeFromVideoDevice(camId, videoElId, (res, err)=>{
-    if(res && res.getText){ onText(res.getText()); }
+    if(res && res.getText){
+      console.log("ZXing decoded:", res.getText());
+      onText(res.getText());
+    }
   });
+}
+
+function showDecodedPreview(txt){
+  const box=$("scan-preview");
+  box.innerHTML = `<div>最近一次解碼：<strong>${txt}</strong></div>`;
 }
 
 async function smartScan(videoElId, inputId, keepOpen=false){
@@ -181,7 +184,6 @@ async function smartScan(videoElId, inputId, keepOpen=false){
 
   await preflightPermission().catch(()=>{});
 
-  // 開串流
   try{
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio:false });
     videoEl.srcObject = stream; await videoEl.play();
@@ -191,31 +193,23 @@ async function smartScan(videoElId, inputId, keepOpen=false){
 
   const onDetected = (txt)=>{
     inputEl.value = txt;
+    showDecodedPreview(txt);
     if(!keepOpen){
       stopVideo(videoEl);
       if(zxingReader){ try{ zxingReader.reset(); }catch(e){} }
     }
-    // 連續模式：自動交接
-    if(keepOpen){
-      const handler = $("t-handler").value;
-      const title = $("t-title").value.trim();
-      // 不在這裡自動寫庫，避免未登入。交給按鈕。
-    }
   };
 
-  // 若強制 ZXing，直接走 ZXing
   if(forceZX){
     try{ await startZXing(videoElId, onDetected); }catch(e){ $("scan-help").innerHTML = "ZXing 也無法啟動，請用『以拍照上傳掃碼』。"; }
     return;
   }
 
-  // 先 BarcodeDetector，5 秒內沒結果就切 ZXing
-  let switched = false;
+  let switched=false;
   try{
     await startBarcodeDetector(videoEl, (txt)=>{ if(switched) return; switched=true; onDetected(txt); });
   }catch(e){
-    switched=true;
-    try{ await startZXing(videoElId, onDetected); }catch(err){ $("scan-help").innerHTML = "無法啟動掃描，請用『以拍照上傳掃碼』。"; }
+    switched=true; try{ await startZXing(videoElId, onDetected); }catch(err){ $("scan-help").innerHTML = "無法啟動掃描，請用『以拍照上傳掃碼』。"; }
     return;
   }
   detectorTimer = setTimeout(async ()=>{
@@ -223,17 +217,17 @@ async function smartScan(videoElId, inputId, keepOpen=false){
       switched=true;
       try{ await startZXing(videoElId, onDetected); }catch(err){ $("scan-help").innerHTML = "無法啟動掃描，請用『以拍照上傳掃碼』。"; }
     }
-  }, 5000);
+  }, 4000);
 }
 
-// Fallback: photo upload scan via ZXing
+// Photo upload fallback
 $("btn-file-scan").addEventListener("click", ()=> $("file-scan").click());
 $("file-scan").addEventListener("change", async (e)=>{
   const file = e.target.files?.[0]; if(!file) return;
   const url = URL.createObjectURL(file); const img = new Image();
   img.onload = async ()=>{
     const reader = new ZXing.BrowserMultiFormatReader();
-    try{ const result = await reader.decodeFromImageElement(img); $("t-barcode").value = result.getText(); }
+    try{ const result = await reader.decodeFromImageElement(img); $("t-barcode").value = result.getText(); showDecodedPreview(result.getText()); }
     catch{ alert("無法從照片辨識條碼，請再試一次（請對焦、光線足）。"); }
     finally{ URL.revokeObjectURL(url); e.target.value=""; }
   };
