@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>文件條碼流轉與簽核系統 (Firebase + JS)</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Firebase SDK (Compat for simplicity) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <!-- html5-qrcode (camera barcode scanning) -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.10/html5-qrcode.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📄 文件條碼流轉與簽核系統</h1>
+      <p class="muted">方案一：Firebase + JavaScript（免後端）</p>
+    </header>
+
+    <div id="auth-bar" class="card" style="display:flex;gap:8px;align-items:center;">
+      <span id="auth-status">尚未登入</span>
+      <button id="btn-signin">使用 Google 登入</button>
+      <button id="btn-signout" style="display:none;">登出</button>
+    </div>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="transfer">新增 / 交接</button>
+      <button class="tab" data-tab="query">查詢 / 歷史</button>
+      <button class="tab" data-tab="approve">主管簽核</button>
+      <button class="tab" data-tab="setup">連線設定</button>
+    </nav>
+
+    <!-- Transfer Tab -->
+    <section id="transfer" class="tab-pane active">
+      <h2>新增 / 交接紀錄</h2>
+
+      <div class="row">
+        <label>條碼號碼</label>
+        <div class="barcode-row">
+          <input id="t-barcode" placeholder="掃碼或輸入條碼號碼" />
+          <button id="btn-open-scanner">📷 開啟相機掃碼</button>
+        </div>
+        <div id="scanner" class="scanner" style="display:none;"></div>
+      </div>
+
+      <div class="row">
+        <label>文件標題（第一筆必填，之後會自動沿用）</label>
+        <input id="t-title" placeholder="例如：合約-2025-09-18" />
+      </div>
+
+      <div class="row">
+        <label>文件屬性（決定是否需要主管簽核）</label>
+        <select id="t-signlevel">
+          <option value="0">普通（不需簽核）</option>
+          <option value="1">需 Level 1 簽核</option>
+          <option value="2">需 Level 1 + Level 2 簽核</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label>經手人（您的姓名）</label>
+        <input id="t-handler" placeholder="輸入您的姓名" />
+      </div>
+
+      <div class="row">
+        <button id="btn-transfer" class="primary">➕ 新增 / 交接</button>
+      </div>
+
+      <div id="t-result" class="result"></div>
+    </section>
+
+    <!-- Query Tab -->
+    <section id="query" class="tab-pane">
+      <h2>查詢目前狀態 / 歷史紀錄</h2>
+      <div class="row">
+        <label>條碼號碼</label>
+        <div class="barcode-row">
+          <input id="q-barcode" placeholder="掃碼或輸入條碼號碼" />
+          <button id="btn-open-scanner-q">📷 開啟相機掃碼</button>
+        </div>
+        <div id="scanner-q" class="scanner" style="display:none;"></div>
+      </div>
+      <div class="row">
+        <button id="btn-query" class="primary">🔎 查詢</button>
+      </div>
+
+      <div id="q-current" class="card"></div>
+      <h3>歷史紀錄</h3>
+      <table class="table" id="history-table">
+        <thead>
+          <tr>
+            <th>條碼</th>
+            <th>標題</th>
+            <th>經手人</th>
+            <th>進入時間</th>
+            <th>離開時間</th>
+            <th>停留時長</th>
+            <th>狀態</th>
+            <th>簽核(L1/L2)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- Approve Tab -->
+    <section id="approve" class="tab-pane">
+      <h2>主管簽核</h2>
+      <div class="row">
+        <label>條碼號碼</label>
+        <div class="barcode-row">
+          <input id="a-barcode" placeholder="掃碼或輸入條碼號碼" />
+          <button id="btn-open-scanner-a">📷 開啟相機掃碼</button>
+        </div>
+        <div id="scanner-a" class="scanner" style="display:none;"></div>
+      </div>
+
+      <div class="row">
+        <label>簽核層級</label>
+        <select id="a-level">
+          <option value="1">Level 1</option>
+          <option value="2">Level 2</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label>簽核動作</label>
+        <select id="a-action">
+          <option value="approve">同意</option>
+          <option value="reject">退回</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label>簽核備註</label>
+        <textarea id="a-note" rows="3" placeholder="（可選）輸入簽核意見"></textarea>
+      </div>
+
+      <!-- 超簡易主管驗證（示範用，正式請用 Firebase Auth + 角色控制） -->
+      <div class="row">
+        <label>主管密碼（示範）</label>
+        <input id="a-passcode" type="password" placeholder="請輸入主管密碼（示範）" />
+      </div>
+
+      <div class="row">
+        <button id="btn-approve" class="primary">🖊️ 送出簽核</button>
+      </div>
+
+      <div id="a-result" class="result"></div>
+    </section>
+
+    <!-- Setup Tab -->
+    <section id="setup" class="tab-pane">
+      <h2>連線設定</h2>
+      <p>請在 <code>app.js</code> 中貼上您的 Firebase 設定（firebaseConfig）。</p>
+      <ol>
+        <li>前往 <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer">Firebase Console</a> 建立專案</li>
+        <li>建立 Web App 並取得 <code>firebaseConfig</code></li>
+        <li>啟用 Firestore（可先用測試規則）</li>
+        <li>重新整理本頁後即可使用</li>
+      </ol>
+      <p class="muted">⚠️ 本範例預設不啟用登入驗證，僅供快速體驗。正式上線請設定 Firestore 安全規則與 Firebase Authentication。</p>
+    </section>
+
+    <footer>
+      <small>© 2025 文件條碼流轉與簽核系統 — Demo</small>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
