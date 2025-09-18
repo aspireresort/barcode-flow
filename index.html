@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>文件條碼流轉系統 (Smart Scanner)</title>
+  <title>文件條碼流轉系統 (Smart Scanner v4)</title>
   <link rel="stylesheet" href="style.css" />
   <!-- Firebase (Compat) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -16,7 +16,7 @@
   <div class="container">
     <header>
       <h1>📄 文件條碼流轉系統</h1>
-      <p class="muted">Smart Scanner：BarcodeDetector → ZXing → 圖片上傳後備</p>
+      <p class="muted">v4：iOS Safari 修正（Redirect 登入）、強化掃描 fallback、ZXing 強制模式</p>
     </header>
 
     <div id="auth-bar" class="card authbar">
@@ -35,6 +35,10 @@
 
     <!-- Transfer -->
     <section id="transfer" class="tab-pane active">
+      <div class="row small">
+        <label><input type="checkbox" id="force-zxing" /> 強制使用 ZXing（若 iOS 無法辨識可勾選）</label>
+      </div>
+
       <h2>新增 / 交接</h2>
       <div class="row">
         <label>條碼號碼</label>
@@ -59,7 +63,6 @@
       <div class="row">
         <label>經手人（下拉清單）</label>
         <select id="t-handler"></select>
-        <div class="tiny muted">清單來源：Firestore 集合 <code>handlers</code>（欄位 <code>name</code>）。</div>
       </div>
 
       <div class="row">
@@ -150,7 +153,7 @@
       </div>
     </section>
 
-    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner</small></footer>
+    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner v4</small></footer>
   </div>
   <script src="app.js"></script>
 </body>
