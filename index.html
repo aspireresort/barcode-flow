@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>文件條碼流轉系統 (Smart Scanner v4.6)</title>
+  <title>文件條碼流轉系統 (Smart Scanner v4.7)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="container">
     <header>
       <h1>📄 文件條碼流轉系統</h1>
-      <p class="muted">v4.6：iOS Canvas 輪詢解碼 + Google 登入修復（Redirect）+ 未登入亦可測試掃描</p>
+      <p class="muted">v4.7：登入修復（Redirect + Persistence）＆ 掃描更穩（兩階段解碼 10FPS）</p>
     </header>
 
     <div id="auth-bar" class="card authbar">
@@ -34,6 +34,7 @@
         <div class="barcode-row">
           <input id="t-barcode" placeholder="掃碼或輸入條碼號碼" />
           <button id="btn-open-scanner" class="secondary">📷 開啟相機掃碼</button>
+          <button id="btn-stop-scanner" class="secondary">🛑 停止相機</button>
           <button id="btn-snapshot" class="secondary">📸 手動擷取影像解碼</button>
           <button id="btn-file-scan" class="secondary">🖼️ 照片上傳掃碼</button>
           <input id="file-scan" type="file" accept="image/*" capture="environment" style="display:none" />
@@ -78,6 +79,7 @@
           <div class="barcode-row">
             <input id="q-barcode" placeholder="掃碼或輸入條碼號碼" />
             <button id="btn-open-scanner-q" class="secondary">📷 開啟相機掃碼</button>
+            <button id="btn-stop-scanner-q" class="secondary">🛑 停止相機</button>
           </div>
         </div>
         <div class="video-wrap small">
@@ -142,7 +144,7 @@
       </div>
     </section>
 
-    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner v4.6</small></footer>
+    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner v4.7</small></footer>
   </div>
 
   <!-- Firebase -->

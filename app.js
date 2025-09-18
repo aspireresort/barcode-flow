@@ -1,4 +1,4 @@
-// app.js — Smart Scanner v4.6
+// app.js — Smart Scanner v4.7
 
 // Firebase 初始化
 const firebaseConfig = {
@@ -22,7 +22,19 @@ const ddhhmmss=(sec)=>{ sec=Math.max(0,Math.floor(sec||0)); const d=Math.floor(s
 function isIOSSafari(){ return /iP(hone|ad|od)/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent); }
 function log(msg){ const b=$("debug-log"); if(!b) return; const d=document.createElement("div"); d.textContent=msg; b.appendChild(d); }
 
-// Auth（Redirect on iOS）
+// —— Auth 強化 ——
+(async ()=>{
+  try{
+    await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+    log("Auth persistence: LOCAL");
+  }catch(e){ log("setPersistence error: "+e.message); }
+  // getRedirectResult：處理 iOS 返回
+  try{
+    const res = await auth.getRedirectResult();
+    if(res && res.user){ log("Redirect 回來，已登入："+res.user.email); }
+  }catch(e){ log("getRedirectResult error: "+e.code+" / "+e.message); }
+})();
+
 auth.onAuthStateChanged(async (u)=>{
   $("auth-status").textContent = u ? `已登入：${u.email}` : "尚未登入（未登入時可測試掃描，但無法寫入）";
   $("btn-signin").style.display = u ? "none" : "inline-block";
@@ -31,11 +43,11 @@ auth.onAuthStateChanged(async (u)=>{
 });
 $("btn-signin").addEventListener("click", async ()=>{
   try{
-    if(isIOSSafari()) await auth.signInWithRedirect(provider);
-    else await auth.signInWithPopup(provider);
+    if(isIOSSafari()){ log("Start Redirect Sign-in"); await auth.signInWithRedirect(provider); }
+    else{ log("Start Popup Sign-in"); await auth.signInWithPopup(provider); }
   }catch(e){
     log("Auth error: "+e.code+" / "+e.message);
-    alert("登入失敗："+e.message+"。請確認 Firebase Auth 已啟用 Google，且已把 github pages 網域加入 Authorized domains。");
+    alert("登入失敗："+e.message+"。請確認 Firebase Auth 已啟用 Google，且把 GitHub Pages 網域加入 Authorized domains。");
   }
 });
 $("btn-signout").addEventListener("click", ()=>auth.signOut());
@@ -49,7 +61,7 @@ document.querySelectorAll(".tab").forEach(btn=>{
   });
 });
 
-// Firestore helpers（與前版相同）
+// Firestore helpers
 async function getLastFlow(barcode){
   const snap = await db.collection("flows").where("barcode_id","==",barcode).orderBy("entry_time","desc").limit(1).get();
   if(snap.empty) return null; const doc = snap.docs[0]; return { id: doc.id, ...doc.data() };
@@ -102,40 +114,36 @@ async function buildReport(start,end){
   return { rows, newCount, transferCount, avgStayStr: n?ddhhmmss(totalStay/n):"—" };
 }
 
-// —— 掃描（Canvas Polling for iOS）——
-let zxingReader=null; let currentStream=null; let torchOn=false; let pollingTimer=null;
+// —— 掃描（兩階段 10FPS） ——
+let zxingReader=null; let currentStream=null; let torchOn=false; let pollingTimer=null; let phase="code128"; let missCount=0;
 function stopVideo(videoEl){ try{ const s=videoEl.srcObject; if(s){ s.getTracks().forEach(t=>t.stop()); } }catch(e){} videoEl.srcObject=null; currentStream=null; }
 function stopPolling(){ if(pollingTimer){ clearInterval(pollingTimer); pollingTimer=null; } }
-function buildZXingReader(hintsMode="code128-first"){
+function buildZXingReader(mode){
   const ZX = window.ZXing;
   if(!ZX || !ZX.BrowserMultiFormatReader){ alert("ZXing 載入失敗，請重新整理頁面或檢查網路"); return null; }
-  if(zxingReader) return zxingReader;
   let hints = undefined;
   try{
     const H = ZX.DecodeHintType;
     const BF = ZX.BarcodeFormat;
     hints = new Map();
     hints.set(H.TRY_HARDER, true);
-    if(hintsMode === "code128-first"){
-      hints.set(H.POSSIBLE_FORMATS, [BF.CODE_128]);
-    }else{
-      hints.set(H.POSSIBLE_FORMATS, [BF.CODE_128,BF.CODE_39,BF.EAN_13,BF.EAN_8,BF.QR_CODE,BF.UPC_A,BF.UPC_E,BF.ITF,BF.CODABAR]);
-    }
-  }catch(e){
-    // 某些環境沒有 HintType 也能跑，忽略
-  }
-  zxingReader = new ZX.BrowserMultiFormatReader(hints);
-  return zxingReader;
+    if(mode==="code128"){ hints.set(H.POSSIBLE_FORMATS, [BF.CODE_128]); }
+    else { hints.set(H.POSSIBLE_FORMATS, [BF.CODE_128,BF.CODE_39,BF.EAN_13,BF.EAN_8,BF.QR_CODE,BF.UPC_A,BF.UPC_E,BF.ITF,BF.CODABAR]); }
+  }catch(e){ /* 有些環境沒有 HintType 也能跑 */ }
+  return new ZX.BrowserMultiFormatReader(hints);
 }
 async function startStream(videoEl){
-  const constraints = { audio:false, video:{ facingMode:{ideal:"environment"}, width:{ideal:1920}, height:{ideal:1080} } };
+  const constraints = { audio:false, video:{ facingMode:{ideal:"environment"}, width:{ideal:1280}, height:{ideal:720} } };
   const stream = await navigator.mediaDevices.getUserMedia(constraints);
-  videoEl.srcObject = stream; await videoEl.play(); currentStream = stream;
+  videoEl.srcObject = stream;
+  await new Promise(r=> videoEl.onloadedmetadata = ()=>{ videoEl.play(); r(); });
+  currentStream = stream;
   return stream;
 }
-function startCanvasPolling(videoEl, onText, hintsMode="code128-first"){
+function startPolling(videoEl, onText){
   const ZX = window.ZXing;
-  const reader = buildZXingReader(hintsMode); if(!reader) throw new Error("zxing-missing");
+  let reader = buildZXingReader("code128");
+  phase="code128"; missCount=0;
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   stopPolling();
@@ -152,9 +160,14 @@ function startCanvasPolling(videoEl, onText, hintsMode="code128-first"){
         onText(res.getText());
       }
     }catch(e){
-      // 每幀嘗試，解不到就忽略，過幾幀再試
+      // 連續 miss，切換到多制式
+      missCount++;
+      if(phase==="code128" && missCount>20){
+        log("切換為多制式解碼（可能不是 Code128）");
+        reader = buildZXingReader("mixed"); phase="mixed"; missCount=0;
+      }
     }
-  }, 160); // 約 6 FPS
+  }, 100); // 10 FPS
 }
 
 function showDecodedPreview(txt){ const box=$("scan-preview"); if(box) box.innerHTML = `<div>最近一次解碼：<strong>${txt}</strong></div>`; }
@@ -163,26 +176,27 @@ async function toggleTorch(){
   const track = currentStream.getVideoTracks()[0];
   const caps = track.getCapabilities ? track.getCapabilities() : {};
   if(!caps.torch){ alert("裝置不支援手電筒或瀏覽器未開放"); return; }
-  torchOn = !torchOn;
-  try{ await track.applyConstraints({ advanced:[ { torch: torchOn } ] }); }catch(e){ alert("無法切換手電筒：" + e.message); }
+  try{
+    const newVal = !(track.getSettings()?.torch);
+    await track.applyConstraints({ advanced:[ { torch: newVal } ] });
+  }catch(e){ alert("無法切換手電筒：" + e.message); }
 }
 
-// 綁定掃描按鈕
+// 綁定
 $("btn-open-scanner").addEventListener("click", async ()=>{
   const keepOpen = $("t-batch").checked;
   const onText=(txt)=>{ $("t-barcode").value = txt; showDecodedPreview(txt); if(!keepOpen){ stopPolling(); stopVideo($("video")); } };
   try{
     await startStream($("video"));
     $("scan-help").textContent = "請把 Code128 水平放置，距離 15–25cm，必要時開啟手電筒。";
-    startCanvasPolling($("video"), onText, "code128-first");
+    startPolling($("video"), onText);
   }catch(e){
     $("scan-help").textContent = "相機開啟失敗，請改用『照片上傳掃碼』。"; log("open-scanner error: "+e);
   }
 });
+$("btn-stop-scanner").addEventListener("click", ()=>{ stopPolling(); stopVideo($("video")); });
 $("btn-snapshot").addEventListener("click", async ()=>{
-  // 用現在幀做一次 decode（相當於立即輪詢一次）
   const ZX = window.ZXing;
-  const reader = buildZXingReader("code128-first"); if(!reader) return;
   const videoEl = $("video");
   const canvas = document.createElement("canvas");
   canvas.width = videoEl.videoWidth || 1280;
@@ -190,7 +204,9 @@ $("btn-snapshot").addEventListener("click", async ()=>{
   const ctx = canvas.getContext("2d");
   ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
   try{
-    const res = await reader.decodeFromCanvas(canvas);
+    let reader = buildZXingReader("code128");
+    let res = await reader.decodeFromCanvas(canvas);
+    if(!res || !res.getText){ reader = buildZXingReader("mixed"); res = await reader.decodeFromCanvas(canvas); }
     $("t-barcode").value = res.getText(); showDecodedPreview(res.getText());
     log("手動擷取解碼："+res.getText());
   }catch(e){
@@ -205,15 +221,19 @@ $("file-scan").addEventListener("change", async (e)=>{
   const file = e.target.files?.[0]; if(!file) return;
   const url = URL.createObjectURL(file); const img = new Image();
   img.onload = async ()=>{
-    const reader = buildZXingReader("code128-first"); if(!reader){ URL.revokeObjectURL(url); e.target.value=""; return; }
-    try{ const result = await reader.decodeFromImageElement(img); $("t-barcode").value = result.getText(); showDecodedPreview(result.getText()); }
+    try{ 
+      let reader = buildZXingReader("code128"); 
+      let result = await reader.decodeFromImageElement(img);
+      if(!result || !result.getText){ reader = buildZXingReader("mixed"); result = await reader.decodeFromImageElement(img); }
+      $("t-barcode").value = result.getText(); showDecodedPreview(result.getText()); 
+    }
     catch{ alert("無法從照片辨識條碼，請換更清晰的照片"); }
     finally{ URL.revokeObjectURL(url); e.target.value=""; }
   };
   img.src = url;
 });
 
-// Handlers（與前版相同）
+// Handlers & 其他功能
 async function loadHandlers(){
   const sel = $("t-handler"); if(!sel) return; sel.innerHTML="";
   const snap = await db.collection("handlers").orderBy("name","asc").get();
@@ -253,11 +273,13 @@ $("btn-transfer").addEventListener("click", async ()=>{
 $("btn-open-scanner-q").addEventListener("click", async ()=>{
   try{
     await startStream($("video-q"));
-    startCanvasPolling($("video-q"), (txt)=>{ $("q-barcode").value = txt; showDecodedPreview(txt); stopPolling(); stopVideo($("video-q")); }, "code128-first");
+    startPolling($("video-q"), (txt)=>{ $("q-barcode").value = txt; showDecodedPreview(txt); stopPolling(); stopVideo($("video-q")); });
   }catch(e){
     $("range-results").innerHTML = `<div class="card error">查詢用相機啟動失敗，請直接輸入條碼。</div>`;
   }
 });
+$("btn-stop-scanner-q").addEventListener("click", ()=>{ stopPolling(); stopVideo($("video-q")); });
+
 $("btn-query").addEventListener("click", async ()=>{
   const barcode=$("q-barcode").value.trim(); if(!barcode){ alert("請輸入條碼號碼"); return; }
   const curEl=$("q-current"); const tbody=document.querySelector("#history-table tbody"); curEl.innerHTML=""; tbody.innerHTML="";
@@ -303,7 +325,7 @@ function renderReportList(container, rows){
     <div>停留：${r.stay_duration_str||"-"}</div></div>`).join("");
 }
 
-// 報表
+// 區段查詢與報表
 $("btn-range-query").addEventListener("click", async ()=>{
   const s=$("q-start").value; const e=$("q-end").value; const start=s?new Date(s):null; const end=e?new Date(e):null; const box=$("range-results"); box.innerHTML="查詢中…";
   try{ const rows=await rangeQuery(start,end); renderRangeResults(box,rows); }catch(err){ box.innerHTML = `<div class="card error">錯誤：${err.message}</div>`; }
