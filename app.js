@@ -189,33 +189,59 @@ async function tryZXingPolling(videoEl, onText){
   const ZX = window.ZXing;
   if(!ZX || !ZX.BrowserMultiFormatReader) return false;
   usingEngine = "ZXing"; logEngine();
+
   const reader = new ZX.BrowserMultiFormatReader();
   clearIntervalSafe();
+
   intervalId = setInterval(async ()=>{
     try{
       const canvas = roiCanvas(videoEl);
-      const res = await reader.decodeFromCanvas(canvas);
-      if(res?.getText){ onText(res.getText()); }
-    }catch(e){}
-  }, 150);
+      // 舊：reader.decodeFromCanvas(canvas)  ← 會報 undefined
+      // 新：用 dataURL 餵給 decodeFromImageUrl
+      const dataUrl = canvas.toDataURL("image/png");
+      const res = await reader.decodeFromImageUrl(dataUrl);
+      if(res && res.getText){
+        onText(res.getText());
+      }
+    }catch(e){
+      // 解不到就忽略，下一幀再試
+    }
+  }, 150); // ~6-7 FPS
   return true;
 }
+
 
 // UI 綁定 — 開啟掃描
 $("btn-open-scanner").addEventListener("click", async ()=>{
   const keepOpen = $("t-batch").checked;
-  const onText=(txt)=>{ $("t-barcode").value = txt; $("scan-preview").innerHTML = `最近一次解碼：<b>${txt}</b>`; if(!keepOpen){ stopVideo($("video")); } };
+  const onText = (txt)=>{
+    $("t-barcode").value = txt;
+    $("scan-preview").innerHTML = `最近一次解碼：<b>${txt}</b>`;
+    if(!keepOpen){ stopVideo($("video")); }
+  };
+
   try{
+    // 1) 試 BarcodeDetector（用我們自己的 <video> 串流）
     await startStream($("video"));
     $("scan-help").textContent = "把條碼橫向置中，距離 15–25cm；必要時開啟手電筒。";
-    // Engine chain
     const okBD = await tryBarcodeDetector($("video"), onText);
-    if(!okBD){
-      const okQ = await tryQuaggaLive($("video"), onText);
-      if(!okQ){ await tryZXingPolling($("video"), onText); }
-    }
-  }catch(e){ $("scan-help").textContent = "相機開啟失敗"; log("open-scanner error: "+e); }
+    if(okBD) return;
+
+    // 2) 關掉 <video> 的串流，交給 Quagga 自己開
+    stopVideo($("video"));
+    const okQ = await tryQuaggaLive($("video").parentElement, onText);
+    if(okQ) return;
+
+    // 3) Quagga 也不行就再開回 <video> 並跑 ZXing 輪詢（已修正 API）
+    await startStream($("video"));
+    await tryZXingPolling($("video"), onText);
+
+  }catch(e){
+    $("scan-help").textContent = "相機開啟失敗";
+    log("open-scanner error: "+e);
+  }
 });
+
 $("btn-stop-scanner").addEventListener("click", ()=> stopVideo($("video")));
 
 $("btn-snapshot").addEventListener("click", async ()=>{
@@ -242,12 +268,22 @@ $("btn-snapshot").addEventListener("click", async ()=>{
     }catch(e){ log("Quagga decodeSingle error: "+e); }
   }
   // Last try ZXing
-  try{
-    const ZX = window.ZXing; if(ZX && ZX.BrowserMultiFormatReader){
-      const r = new ZX.BrowserMultiFormatReader(); const res = await r.decodeFromCanvas(canvas);
-      if(res?.getText){ $("t-barcode").value=res.getText(); $("scan-preview").innerHTML=`最近一次解碼：<b>${res.getText()}</b>`; return; }
+try{
+  const ZX = window.ZXing;
+  if(ZX && ZX.BrowserMultiFormatReader){
+    const r = new ZX.BrowserMultiFormatReader();
+    const dataUrl = canvas.toDataURL("image/png");
+    const res = await r.decodeFromImageUrl(dataUrl);
+    if(res && res.getText){
+      $("t-barcode").value = res.getText();
+      $("scan-preview").innerHTML = `最近一次解碼：<b>${res.getText()}</b>`;
+      return;
     }
-  }catch(e){ log("ZXing snapshot error: "+e); }
+  }
+}catch(e){
+  log("ZXing snapshot error: "+e);
+}
+
 });
 
 $("btn-torch").addEventListener("click", async ()=>{
