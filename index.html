@@ -5,14 +5,87 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>文件條碼流轉系統 (Firebase + JS)</title>
   <link rel="stylesheet" href="style.css" />
+  <!-- Firebase SDK (Compat) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <!-- html5-qrcode (camera barcode scanning) -->
   <script src="https://unpkg.com/html5-qrcode/minified/html5-qrcode.min.js"></script>
+  <!-- Tesseract OCR -->
   <script src="https://unpkg.com/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
 </head>
 <body>
-  <h1>文件條碼流轉系統 v2</h1>
-  <p>請修改 app.js 內的 firebaseConfig 後使用。</p>
+  <div class="container">
+    <header>
+      <h1>📄 文件條碼流轉系統 v2</h1>
+      <p class="muted">Firebase + JavaScript（OCR + 交接 + 報表）</p>
+    </header>
+
+    <div id="auth-bar">
+      <span id="auth-status">尚未登入</span>
+      <button id="btn-signin">使用 Google 登入</button>
+      <button id="btn-signout" style="display:none;">登出</button>
+    </div>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="transfer">新增 / 交接</button>
+      <button class="tab" data-tab="query">查詢 / 歷史</button>
+      <button class="tab" data-tab="reports">報表</button>
+    </nav>
+
+    <section id="transfer" class="tab-pane active">
+      <h2>新增 / 交接</h2>
+      <div class="row">
+        <label>條碼號碼</label>
+        <input id="t-barcode" placeholder="掃碼或輸入條碼號碼" />
+        <button id="btn-open-scanner">📷 掃碼</button>
+        <div id="scanner" class="scanner" style="display:none;"></div>
+      </div>
+      <div class="row">
+        <label>文件標題（第一筆必填）</label>
+        <input id="t-title" />
+        <input id="t-ocr-file" type="file" accept="image/*" />
+        <button id="btn-ocr">OCR 辨識</button>
+        <div id="t-ocr-status"></div>
+      </div>
+      <div class="row">
+        <label>經手人</label>
+        <select id="t-handler"></select>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="t-batch" /> 連續掃描模式</label>
+      </div>
+      <button id="btn-transfer">新增 / 交接</button>
+      <div id="t-result"></div>
+    </section>
+
+    <section id="query" class="tab-pane">
+      <h2>查詢 / 歷史</h2>
+      <input id="q-barcode" placeholder="條碼號碼" />
+      <button id="btn-open-scanner-q">📷 掃碼</button>
+      <div id="scanner-q" class="scanner" style="display:none;"></div>
+      <button id="btn-query">查詢</button>
+      <div id="q-current"></div>
+      <table id="history-table">
+        <thead><tr><th>條碼</th><th>標題</th><th>經手人</th><th>進入時間</th><th>離開時間</th><th>停留時長</th><th>狀態</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <h3>區段查詢</h3>
+      <input type="datetime-local" id="q-start" />
+      <input type="datetime-local" id="q-end" />
+      <button id="btn-range-query">查詢區段</button>
+      <div id="range-results"></div>
+    </section>
+
+    <section id="reports" class="tab-pane">
+      <h2>報表</h2>
+      <input type="datetime-local" id="r-start" />
+      <input type="datetime-local" id="r-end" />
+      <button id="btn-report">產生報表</button>
+      <div id="report-cards"></div>
+      <div id="report-list"></div>
+    </section>
+  </div>
+  <script src="app.js"></script>
 </body>
 </html>
