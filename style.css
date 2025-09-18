@@ -1,8 +1,1 @@
-:root{--bg:#0b1020;--card:#101631;--muted:#9aa3b2;--text:#f2f4f8;--accent:#7aa2ff}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,-apple-system,Segoe UI,Roboto,Noto Sans TC,PingFang TC,sans-serif}
-.container{max-width:900px;margin:auto;padding:20px}header{margin-bottom:10px}
-.card{background:#0e1430;border:1px solid #1d2a57;border-radius:12px;padding:12px;margin:10px 0}
-input,button{padding:10px 12px;border-radius:10px;border:1px solid #283357;background:#0f1430;color:var(--text)}
-button{cursor:pointer}button.secondary{border-style:dashed}
-.scanner{width:100%;max-width:360px;aspect-ratio:1/1;background:#0b0f25;border:1px dashed #2a3967;border-radius:12px}
-.muted{color:var(--muted)}.tiny{font-size:.85rem}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+body{background:#111;color:#eee;font-family:sans-serif}
