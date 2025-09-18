@@ -1,5 +1,9 @@
-body { font-family: sans-serif; background:#111; color:#eee; }
-.container { max-width:900px; margin:auto; padding:20px; }
-.tab-pane { display:none; }
-.tab-pane.active { display:block; }
-.scanner { width:300px; height:300px; background:#000; }
+body{font-family:sans-serif;background:#0b1020;color:#f2f4f8}
+.container{max-width:900px;margin:auto;padding:20px}
+.card{background:#101631;border-radius:8px;padding:10px;margin:5px 0}
+button{padding:8px 12px;margin:4px;border-radius:6px}
+.tab-pane{display:none}.tab-pane.active{display:block}
+.tabs{display:flex;gap:8px;margin:10px 0}.tab{background:#101631;padding:8px 12px;border-radius:6px;cursor:pointer}
+.tab.active{background:#7aa2ff;color:#000}
+.scanner{width:100%;max-width:300px;aspect-ratio:1/1;background:#000}
+.table{width:100%;border-collapse:collapse}.table td,.table th{border:1px solid #333;padding:4px}
