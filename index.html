@@ -3,20 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>文件條碼流轉系統 (Smart Scanner v4.3)</title>
+  <title>文件條碼流轉系統 (Smart Scanner v4.4)</title>
   <link rel="stylesheet" href="style.css" />
-  <!-- Firebase Compat -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js" defer></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js" defer></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js" defer></script>
-  <!-- ZXing -->
-  <script src="https://unpkg.com/@zxing/browser@0.1.5" defer></script>
 </head>
 <body>
   <div class="container">
     <header>
       <h1>📄 文件條碼流轉系統</h1>
-      <p class="muted">v4.3：iOS 強化掃描（ZXing 連續掃描 + 手動快照 + 照片上傳）、UI 修正、完整 Firebase 版</p>
+      <p class="muted">v4.4：修正 Safari/Chrome 載入順序、改用 ZXing UMD、強化除錯與備援</p>
     </header>
 
     <div id="auth-bar" class="card authbar">
@@ -156,8 +150,16 @@
       </div>
     </section>
 
-    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner v4.3</small></footer>
+    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner v4.4</small></footer>
   </div>
-  <script src="app.js" defer></script>
+
+  <!-- Firebase (Compat, must come before app.js) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <!-- ZXing UMD (exposes window.ZXing) -->
+  <script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
+  <!-- App -->
+  <script src="app.js"></script>
 </body>
 </html>
