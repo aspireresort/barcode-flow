@@ -1,1 +1,157 @@
-<!doctype html><html><head><meta charset='utf-8'><title>Doc Flow</title></head><body><h1>Smart Scanner</h1><script src='app.js'></script></body></html>
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>文件條碼流轉系統 (Smart Scanner)</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Firebase (Compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <!-- ZXing -->
+  <script src="https://unpkg.com/@zxing/browser@latest"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📄 文件條碼流轉系統</h1>
+      <p class="muted">Smart Scanner：BarcodeDetector → ZXing → 圖片上傳後備</p>
+    </header>
+
+    <div id="auth-bar" class="card authbar">
+      <span id="auth-status">尚未登入</span>
+      <div class="spacer"></div>
+      <button id="btn-signin">使用 Google 登入</button>
+      <button id="btn-signout" style="display:none;">登出</button>
+    </div>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="transfer">新增 / 交接</button>
+      <button class="tab" data-tab="query">查詢 / 歷史</button>
+      <button class="tab" data-tab="reports">報表</button>
+      <button class="tab" data-tab="setup">設定</button>
+    </nav>
+
+    <!-- Transfer -->
+    <section id="transfer" class="tab-pane active">
+      <h2>新增 / 交接</h2>
+      <div class="row">
+        <label>條碼號碼</label>
+        <div class="barcode-row">
+          <input id="t-barcode" placeholder="掃碼或輸入條碼號碼" />
+          <button id="btn-open-scanner" class="secondary">📷 開啟相機掃碼</button>
+          <button id="btn-file-scan" class="secondary">📷 以拍照上傳掃碼</button>
+          <input id="file-scan" type="file" accept="image/*" capture="environment" style="display:none" />
+        </div>
+        <div id="scan-help" class="muted tiny"></div>
+        <div class="video-wrap">
+          <video id="video" autoplay playsinline muted></video>
+          <canvas id="overlay"></canvas>
+        </div>
+      </div>
+
+      <div class="row">
+        <label>文件標題（第一筆必填，之後沿用）</label>
+        <input id="t-title" placeholder="例如：合約-2025-09-18" />
+      </div>
+
+      <div class="row">
+        <label>經手人（下拉清單）</label>
+        <select id="t-handler"></select>
+        <div class="tiny muted">清單來源：Firestore 集合 <code>handlers</code>（欄位 <code>name</code>）。</div>
+      </div>
+
+      <div class="row">
+        <label><input type="checkbox" id="t-batch" /> 連續掃描模式（掃到即交接，不關相機）</label>
+      </div>
+
+      <div class="row">
+        <button id="btn-transfer" class="primary">➕ 新增 / 交接</button>
+      </div>
+
+      <div id="t-result" class="result"></div>
+    </section>
+
+    <!-- Query -->
+    <section id="query" class="tab-pane">
+      <h2>查詢 / 歷史</h2>
+
+      <details class="card">
+        <summary>🔎 依條碼查詢（保留掃描）</summary>
+        <div class="row">
+          <label>條碼號碼</label>
+          <div class="barcode-row">
+            <input id="q-barcode" placeholder="掃碼或輸入條碼號碼" />
+            <button id="btn-open-scanner-q" class="secondary">📷 開啟相機掃碼</button>
+          </div>
+        </div>
+        <div class="video-wrap small">
+          <video id="video-q" autoplay playsinline muted></video>
+          <canvas id="overlay-q"></canvas>
+        </div>
+        <div class="row">
+          <button id="btn-query" class="primary">查詢</button>
+        </div>
+        <div id="q-current" class="card"></div>
+        <h3>歷史紀錄</h3>
+        <table class="table" id="history-table">
+          <thead>
+            <tr>
+              <th>條碼</th><th>標題</th><th>經手人</th><th>進入時間</th><th>離開時間</th><th>停留時長</th><th>狀態</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </details>
+
+      <details class="card">
+        <summary>🗓️ 依日期/時間區段查詢（分類列出）</summary>
+        <div class="row grid2">
+          <div><label>開始時間</label><input type="datetime-local" id="q-start" /></div>
+          <div><label>結束時間</label><input type="datetime-local" id="q-end" /></div>
+        </div>
+        <div class="row"><button id="btn-range-query" class="primary">查詢區段</button></div>
+        <div id="range-results"></div>
+      </details>
+    </section>
+
+    <!-- Reports -->
+    <section id="reports" class="tab-pane">
+      <h2>報表</h2>
+      <div class="row grid2">
+        <div><label>開始時間</label><input type="datetime-local" id="r-start" /></div>
+        <div><label>結束時間</label><input type="datetime-local" id="r-end" /></div>
+      </div>
+      <div class="row"><button id="btn-report" class="primary">產生報表</button></div>
+      <div id="report-cards" class="grid3">
+        <div class="stat card"><div class="k">—</div><div class="t">新增（第一筆）數量</div></div>
+        <div class="stat card"><div class="k">—</div><div class="t">交接（非第一筆）數量</div></div>
+        <div class="stat card"><div class="k">—</div><div class="t">平均停留時間</div></div>
+      </div>
+      <h3>清單</h3>
+      <div id="report-list"></div>
+    </section>
+
+    <!-- Setup -->
+    <section id="setup" class="tab-pane">
+      <h2>設定</h2>
+      <ol>
+        <li>Firebase Console 啟用 Firestore、Auth（Google），把網域加到 Authorized domains。</li>
+        <li>建立集合 <code>handlers</code>，每筆文件包含欄位 <code>name: string</code>。</li>
+      </ol>
+      <div class="card">
+        <h3>經手人清單管理</h3>
+        <div class="row grid2">
+          <div><input id="h-name" placeholder="輸入姓名後新增" /></div>
+          <div><button id="btn-h-add" class="secondary">新增經手人</button></div>
+        </div>
+        <div id="h-list" class="grid2"></div>
+      </div>
+    </section>
+
+    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner</small></footer>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
