@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>文件條碼流轉系統 (Smart Scanner v4.9b)</title>
+  <title>文件條碼流轉系統 (Smart Scanner v5.1)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="container">
     <header>
       <h1>📄 文件條碼流轉系統</h1>
-      <p class="muted">v4.9b：同 v4.9（瞄準框＋ROI 放大＋Quagga2/ZXing 修正），重新打包</p>
+      <p class="muted">v5.1：分頁可點、將新增與交接分離、條碼輸入列最上方、報表清單表格、掃描穩定性最佳化</p>
     </header>
 
     <div id="auth-bar" class="card authbar">
@@ -20,73 +20,138 @@
       <button id="btn-signout" style="display:none;">登出</button>
     </div>
 
-    <nav class="tabs">
-      <button class="tab active" data-tab="transfer">新增 / 交接</button>
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="create">新增</button>
+      <button class="tab" data-tab="handoff">交接</button>
       <button class="tab" data-tab="query">查詢 / 歷史</button>
       <button class="tab" data-tab="reports">報表</button>
       <button class="tab" data-tab="setup">設定</button>
     </nav>
 
-    <section id="transfer" class="tab-pane active">
-      <h2>新增 / 交接</h2>
+    <!-- 新增 -->
+    <section id="create" class="tab-pane active">
+      <h2>新增</h2>
+
+      <div class="row">
+        <label>條碼號碼</label>
+        <div class="barcode-row">
+          <input id="c-barcode" placeholder="請把條碼橫向放在中央瞄準框內" />
+          <button id="c-open" class="secondary">📷 開啟相機掃碼</button>
+          <button id="c-stop" class="secondary">🛑 停止相機</button>
+          <button id="c-snapshot" class="secondary">📸 手動擷取影像解碼</button>
+          <button id="c-file" class="secondary">🖼️ 照片上傳掃碼</button>
+          <input id="c-file-input" type="file" accept="image/*" capture="environment" style="display:none" />
+          <button id="c-torch" class="secondary">🔦 手電筒</button>
+        </div>
+      </div>
+
       <div class="row grid2">
         <div>
           <label>解碼引擎</label>
-          <select id="engine">
+          <select id="c-engine">
             <option value="auto">Auto（建議）</option>
             <option value="quagga">Quagga2（iOS建議）</option>
             <option value="zxing">ZXing（保底）</option>
           </select>
         </div>
         <div>
-          <label><input type="checkbox" id="opt-zoom" checked /> 啟用 ROI 放大（2~3x 多尺度）</label>
+          <label><input type="checkbox" id="c-zoom" checked /> 啟用 ROI 放大（2~3x 多尺度）</label>
         </div>
       </div>
+
       <div class="row">
-        <label>條碼號碼</label>
-        <div class="barcode-row">
-          <input id="t-barcode" placeholder="請把條碼橫向放在中央瞄準框內" />
-          <button id="btn-open-scanner" class="secondary">📷 開啟相機掃碼</button>
-          <button id="btn-stop-scanner" class="secondary">🛑 停止相機</button>
-          <button id="btn-snapshot" class="secondary">📸 手動擷取影像解碼</button>
-          <button id="btn-file-scan" class="secondary">🖼️ 照片上傳掃碼</button>
-          <input id="file-scan" type="file" accept="image/*" capture="environment" style="display:none" />
-          <button id="btn-torch" class="secondary">🔦 手電筒</button>
-        </div>
-        <div id="scan-help" class="muted tiny">把條碼<strong>橫向</strong>放入中央白色瞄準框，距離約 15–25cm；必要時開啟手電筒。</div>
+        <div id="c-help" class="muted tiny">把條碼<strong>橫向</strong>放入中央白色瞄準框，距離約 15–25cm；必要時開啟手電筒。</div>
         <div class="video-wrap">
-          <video id="video" autoplay playsinline muted></video>
-          <canvas id="overlay"></canvas>
+          <video id="c-video" autoplay playsinline muted></video>
+          <canvas id="c-overlay"></canvas>
           <div class="aim">
             <div class="box"></div>
             <div class="tip">請把條碼橫向置於此框中</div>
           </div>
         </div>
-        <div id="scan-preview" class="card tiny muted"></div>
-        <div id="debug-log" class="card tiny"></div>
+        <div id="c-preview" class="card tiny muted"></div>
+        <div id="c-log" class="card tiny"></div>
       </div>
 
       <div class="row">
-        <label>文件標題（第一筆必填，之後沿用）</label>
-        <input id="t-title" placeholder="例如：合約-2025-09-18" />
+        <label>文件標題（新增第一筆必填）</label>
+        <input id="c-title" placeholder="例如：合約-2025-09-18" />
       </div>
 
       <div class="row">
         <label>經手人（下拉清單）</label>
-        <select id="t-handler"></select>
+        <select id="c-handler"></select>
       </div>
 
       <div class="row">
-        <label><input type="checkbox" id="t-batch" /> 連續掃描模式（掃到即交接，不關相機）</label>
+        <button id="c-submit" class="primary">➕ 新增（建立第一筆）</button>
       </div>
 
-      <div class="row">
-        <button id="btn-transfer" class="primary">➕ 新增 / 交接</button>
-      </div>
-
-      <div id="t-result" class="result"></div>
+      <div id="c-result" class="result"></div>
     </section>
 
+    <!-- 交接 -->
+    <section id="handoff" class="tab-pane">
+      <h2>交接</h2>
+
+      <div class="row">
+        <label>條碼號碼</label>
+        <div class="barcode-row">
+          <input id="h-barcode" placeholder="請把條碼橫向放在中央瞄準框內" />
+          <button id="h-open" class="secondary">📷 開啟相機掃碼</button>
+          <button id="h-stop" class="secondary">🛑 停止相機</button>
+          <button id="h-snapshot" class="secondary">📸 手動擷取影像解碼</button>
+          <button id="h-file" class="secondary">🖼️ 照片上傳掃碼</button>
+          <input id="h-file-input" type="file" accept="image/*" capture="environment" style="display:none" />
+          <button id="h-torch" class="secondary">🔦 手電筒</button>
+        </div>
+      </div>
+
+      <div class="row grid2">
+        <div>
+          <label>解碼引擎</label>
+          <select id="h-engine">
+            <option value="auto">Auto（建議）</option>
+            <option value="quagga">Quagga2（iOS建議）</option>
+            <option value="zxing">ZXing（保底）</option>
+          </select>
+        </div>
+        <div>
+          <label><input type="checkbox" id="h-zoom" checked /> 啟用 ROI 放大（2~3x 多尺度）</label>
+        </div>
+      </div>
+
+      <div class="row">
+        <div id="h-help" class="muted tiny">把條碼<strong>橫向</strong>放入中央白色瞄準框，距離約 15–25cm；必要時開啟手電筒。</div>
+        <div class="video-wrap">
+          <video id="h-video" autoplay playsinline muted></video>
+          <canvas id="h-overlay"></canvas>
+          <div class="aim">
+            <div class="box"></div>
+            <div class="tip">請把條碼橫向置於此框中</div>
+          </div>
+        </div>
+        <div id="h-preview" class="card tiny muted"></div>
+        <div id="h-log" class="card tiny"></div>
+      </div>
+
+      <div class="row">
+        <label>經手人（下拉清單）</label>
+        <select id="h-handler"></select>
+      </div>
+
+      <div class="row">
+        <label><input type="checkbox" id="h-batch" /> 連續掃描模式（掃到即交接，不關相機）</label>
+      </div>
+
+      <div class="row">
+        <button id="h-submit" class="primary">🔁 交接（新增下一筆）</button>
+      </div>
+
+      <div id="h-result" class="result"></div>
+    </section>
+
+    <!-- 查詢 -->
     <section id="query" class="tab-pane">
       <h2>查詢 / 歷史</h2>
       <details class="card">
@@ -95,17 +160,17 @@
           <label>條碼號碼</label>
           <div class="barcode-row">
             <input id="q-barcode" placeholder="掃碼或輸入條碼號碼" />
-            <button id="btn-open-scanner-q" class="secondary">📷 開啟相機掃碼</button>
-            <button id="btn-stop-scanner-q" class="secondary">🛑 停止相機</button>
+            <button id="q-open" class="secondary">📷 開啟相機掃碼</button>
+            <button id="q-stop" class="secondary">🛑 停止相機</button>
           </div>
         </div>
         <div class="video-wrap small">
-          <video id="video-q" autoplay playsinline muted></video>
-          <canvas id="overlay-q"></canvas>
+          <video id="q-video" autoplay playsinline muted></video>
+          <canvas id="q-overlay"></canvas>
           <div class="aim"><div class="box"></div></div>
         </div>
         <div class="row">
-          <button id="btn-query" class="primary">查詢</button>
+          <button id="q-submit" class="primary">查詢</button>
         </div>
         <div id="q-current" class="card"></div>
         <h3>歷史紀錄</h3>
@@ -125,27 +190,38 @@
           <div><label>開始時間</label><input type="datetime-local" id="q-start" /></div>
           <div><label>結束時間</label><input type="datetime-local" id="q-end" /></div>
         </div>
-        <div class="row"><button id="btn-range-query" class="primary">查詢區段</button></div>
+        <div class="row"><button id="q-range" class="primary">查詢區段</button></div>
         <div id="range-results"></div>
       </details>
     </section>
 
+    <!-- 報表 -->
     <section id="reports" class="tab-pane">
       <h2>報表</h2>
       <div class="row grid2">
         <div><label>開始時間</label><input type="datetime-local" id="r-start" /></div>
         <div><label>結束時間</label><input type="datetime-local" id="r-end" /></div>
       </div>
-      <div class="row"><button id="btn-report" class="primary">產生報表</button></div>
+      <div class="row"><button id="r-submit" class="primary">產生報表</button></div>
+
       <div id="report-cards" class="grid3">
         <div class="stat card"><div class="k">—</div><div class="t">新增（第一筆）數量</div></div>
         <div class="stat card"><div class="k">—</div><div class="t">交接（非第一筆）數量</div></div>
         <div class="stat card"><div class="k">—</div><div class="t">平均停留時間</div></div>
       </div>
-      <h3>清單</h3>
-      <div id="report-list"></div>
+
+      <h3>區段清單</h3>
+      <table class="table" id="report-table">
+        <thead>
+          <tr>
+            <th>條碼</th><th>標題</th><th>經手人</th><th>進入時間</th><th>離開時間</th><th>停留時長</th><th>狀態</th><th>類型</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </section>
 
+    <!-- 設定 -->
     <section id="setup" class="tab-pane">
       <h2>設定</h2>
       <ol>
@@ -155,14 +231,14 @@
       <div class="card">
         <h3>經手人清單管理</h3>
         <div class="row grid2">
-          <div><input id="h-name" placeholder="輸入姓名後新增" /></div>
-          <div><button id="btn-h-add" class="secondary">新增經手人</button></div>
+          <div><input id="s-name" placeholder="輸入姓名後新增" /></div>
+          <div><button id="s-add" class="secondary">新增經手人</button></div>
         </div>
-        <div id="h-list" class="grid2"></div>
+        <div id="s-list" class="grid2"></div>
       </div>
     </section>
 
-    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner v4.9b</small></footer>
+    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner v5.1</small></footer>
   </div>
 
   <!-- Firebase -->
