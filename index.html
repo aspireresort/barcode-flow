@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>文件條碼流轉系統 (Smart Scanner v4.8)</title>
+  <title>文件條碼流轉系統 (Smart Scanner v4.9b)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="container">
     <header>
       <h1>📄 文件條碼流轉系統</h1>
-      <p class="muted">v4.8：優先用原生 <code>BarcodeDetector</code> → 其次 <code>Quagga2</code> → 最後 ZXing；強制 1080p、ROI 放大、完整 Debug</p>
+      <p class="muted">v4.9b：同 v4.9（瞄準框＋ROI 放大＋Quagga2/ZXing 修正），重新打包</p>
     </header>
 
     <div id="auth-bar" class="card authbar">
@@ -29,13 +29,23 @@
 
     <section id="transfer" class="tab-pane active">
       <h2>新增 / 交接</h2>
-      <div class="row small">
-        <label><input type="checkbox" id="opt-zoom" checked /> 啟用 ROI 放大（提升解碼率）</label>
+      <div class="row grid2">
+        <div>
+          <label>解碼引擎</label>
+          <select id="engine">
+            <option value="auto">Auto（建議）</option>
+            <option value="quagga">Quagga2（iOS建議）</option>
+            <option value="zxing">ZXing（保底）</option>
+          </select>
+        </div>
+        <div>
+          <label><input type="checkbox" id="opt-zoom" checked /> 啟用 ROI 放大（2~3x 多尺度）</label>
+        </div>
       </div>
       <div class="row">
         <label>條碼號碼</label>
         <div class="barcode-row">
-          <input id="t-barcode" placeholder="掃碼或輸入條碼號碼" />
+          <input id="t-barcode" placeholder="請把條碼橫向放在中央瞄準框內" />
           <button id="btn-open-scanner" class="secondary">📷 開啟相機掃碼</button>
           <button id="btn-stop-scanner" class="secondary">🛑 停止相機</button>
           <button id="btn-snapshot" class="secondary">📸 手動擷取影像解碼</button>
@@ -43,10 +53,14 @@
           <input id="file-scan" type="file" accept="image/*" capture="environment" style="display:none" />
           <button id="btn-torch" class="secondary">🔦 手電筒</button>
         </div>
-        <div id="scan-help" class="muted tiny"></div>
+        <div id="scan-help" class="muted tiny">把條碼<strong>橫向</strong>放入中央白色瞄準框，距離約 15–25cm；必要時開啟手電筒。</div>
         <div class="video-wrap">
           <video id="video" autoplay playsinline muted></video>
           <canvas id="overlay"></canvas>
+          <div class="aim">
+            <div class="box"></div>
+            <div class="tip">請把條碼橫向置於此框中</div>
+          </div>
         </div>
         <div id="scan-preview" class="card tiny muted"></div>
         <div id="debug-log" class="card tiny"></div>
@@ -88,6 +102,7 @@
         <div class="video-wrap small">
           <video id="video-q" autoplay playsinline muted></video>
           <canvas id="overlay-q"></canvas>
+          <div class="aim"><div class="box"></div></div>
         </div>
         <div class="row">
           <button id="btn-query" class="primary">查詢</button>
@@ -147,17 +162,16 @@
       </div>
     </section>
 
-    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner v4.8</small></footer>
+    <footer><small>© 2025 文件條碼流轉系統 — Smart Scanner v4.9b</small></footer>
   </div>
 
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-  <!-- Engines: Quagga2 & ZXing (fallback) -->
+  <!-- Engines -->
   <script src="https://unpkg.com/quagga2@1.8.2/dist/quagga.min.js"></script>
   <script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
-  <!-- App -->
   <script src="app.js"></script>
 </body>
 </html>
